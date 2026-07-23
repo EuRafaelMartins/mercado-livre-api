@@ -69,6 +69,7 @@ app.get('/health', (req, res) => {
 
 app.get('/', (req, res) => {
     const token = getToken(req);
+    if (token) { saveServerToken(token); }
     const authenticated = !!token;
     res.send(`<!DOCTYPE html>
     <html>
