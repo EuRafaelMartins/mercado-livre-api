@@ -19,9 +19,9 @@ function getToken(req) {
     const raw = req.cookies && req.cookies.ml_token;
     if (!raw) return null;
     try {
-          return JSON.parse(raw);
+        return JSON.parse(raw);
     } catch (e) {
-          return null;
+        return null;
     }
 }
 
@@ -56,24 +56,24 @@ app.get('/', (req, res) => {
     </div>
     <h2>Autenticacao</h2>
     ${authenticated
-        ? '<a class="btn" href="/logout">Desconectar</a>'
-        : '<a class="btn" href="/auth/login">Conectar ao Mercado Livre</a>'}
-        <h2>Funcionalidades</h2>
-        <a class="btn" href="/products">Ver Meus Produtos</a>
-        <a class="btn" href="/orders">Ver Meus Pedidos</a>
-        <h2>Endpoints API</h2>
-        <div class="endpoints">
-        GET /auth/login - Pagina de autenticacao<br>
-        GET /callback - Retorno da autenticacao<br>
-        GET /products - Listar produtos<br>
-        GET /orders - Listar pedidos<br>
-        GET /logout - Desconectar<br>
-        POST /webhook - Receber notificacoes<br>
-        GET /health - Status da API
-        </div>
-        </div>
-        </body>
-        </html>`);
+      ? '<a class="btn" href="/logout">Desconectar</a>'
+      : '<a class="btn" href="/auth/login">Conectar ao Mercado Livre</a>'}
+      <h2>Funcionalidades</h2>
+      <a class="btn" href="/products">Ver Meus Produtos</a>
+      <a class="btn" href="/orders">Ver Meus Pedidos</a>
+      <h2>Endpoints API</h2>
+      <div class="endpoints">
+      GET /auth/login - Pagina de autenticacao<br>
+      GET /callback - Retorno da autenticacao<br>
+      GET /products - Listar produtos<br>
+      GET /orders - Listar pedidos<br>
+      GET /logout - Desconectar<br>
+      POST /webhook - Receber notificacoes<br>
+      GET /health - Status da API
+      </div>
+      </div>
+      </body>
+      </html>`);
 });
 
 app.get('/auth/login', (req, res) => {
@@ -110,59 +110,59 @@ app.get('/auth/login', (req, res) => {
 async function handleCallback(req, res) {
     const code = req.query.code || (req.body && req.body.code);
     if (!code) {
-          return res.status(400).send('Codigo de autorizacao ausente.');
+        return res.status(400).send('Codigo de autorizacao ausente.');
     }
     console.log('Callback recebido! Trocando codigo por token...');
     try {
-          const response = await fetch('https://api.mercadolivre.com.br/oauth/token', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
-                  body: new URLSearchParams({
-                            grant_type: 'authorization_code',
-                            client_id: ML_CLIENT_ID,
-                            client_secret: ML_CLIENT_SECRET,
-                            code: code,
-                            redirect_uri: ML_REDIRECT_URI
-                  }).toString()
-          });
+        const response = await fetch('https://api.mercadolibre.com/oauth/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+            body: new URLSearchParams({
+                grant_type: 'authorization_code',
+                client_id: ML_CLIENT_ID,
+                client_secret: ML_CLIENT_SECRET,
+                code: code,
+                redirect_uri: ML_REDIRECT_URI
+            }).toString()
+        });
 
-      console.log('Response status:', response.status);
+    console.log('Response status:', response.status);
 
-      if (!response.ok) {
-              const errorData = await response.text();
-              console.error('Erro do ML:', errorData);
-              return res.status(500).send('Erro ao trocar codigo por token: ' + errorData);
-      }
+    if (!response.ok) {
+        const errorData = await response.text();
+        console.error('Erro do ML:', errorData);
+        return res.status(500).send('Erro ao trocar codigo por token: ' + errorData);
+    }
 
-      const tokenData = await response.json();
-          res.cookie('ml_token', JSON.stringify(tokenData), { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 * 30 });
-          res.send(`<!DOCTYPE html>
-          <html>
-          <head>
-          <title>Autenticacao Bem-Sucedida</title>
-          <script>setTimeout(function(){ window.location.href = '/'; }, 2000);</script>
-          <style>body{font-family:Arial,sans-serif;background:linear-gradient(135deg,#667eea,#764ba2);min-height:100vh;margin:0;display:flex;align-items:center;justify-content:center;}
-          .card{background:#fff;border-radius:16px;padding:40px;max-width:500px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.2);}</style>
-          </head>
-          <body>
-          <div class="card">
-          <h1>Autenticacao Bem-Sucedida!</h1>
-          <p>Voce foi autenticado com sucesso no Mercado Livre! Redirecionando...</p>
-          <p><strong>User ID:</strong> ${tokenData.user_id}</p>
-          </div>
-          </body>
-          </html>`);
+    const tokenData = await response.json();
+        res.cookie('ml_token', JSON.stringify(tokenData), { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 * 30 });
+        res.send(`<!DOCTYPE html>
+        <html>
+        <head>
+        <title>Autenticacao Bem-Sucedida</title>
+        <script>setTimeout(function(){ window.location.href = '/'; }, 2000);</script>
+        <style>body{font-family:Arial,sans-serif;background:linear-gradient(135deg,#667eea,#764ba2);min-height:100vh;margin:0;display:flex;align-items:center;justify-content:center;}
+        .card{background:#fff;border-radius:16px;padding:40px;max-width:500px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.2);}</style>
+        </head>
+        <body>
+        <div class="card">
+        <h1>Autenticacao Bem-Sucedida!</h1>
+        <p>Voce foi autenticado com sucesso no Mercado Livre! Redirecionando...</p>
+        <p><strong>User ID:</strong> ${tokenData.user_id}</p>
+        </div>
+        </body>
+        </html>`);
     } catch (err) {
-          console.error('Erro no callback:', err);
-          res.status(500).send(`<!DOCTYPE html>
-          <html>
-          <head><title>Erro de Autenticacao</title></head>
-          <body>
-          <h1>Erro ao Autenticar</h1>
-          <p>${err.message}</p>
-          <a href="/auth/login">Tentar Novamente</a> | <a href="/">Voltar para Inicio</a>
-          </body>
-          </html>`);
+        console.error('Erro no callback:', err);
+        res.status(500).send(`<!DOCTYPE html>
+        <html>
+        <head><title>Erro de Autenticacao</title></head>
+        <body>
+        <h1>Erro ao Autenticar</h1>
+        <p>${err.message}</p>
+        <a href="/auth/login">Tentar Novamente</a> | <a href="/">Voltar para Inicio</a>
+        </body>
+        </html>`);
     }
 }
 
@@ -173,12 +173,12 @@ app.get('/products', async (req, res) => {
     const token = getToken(req);
     if (!token) return res.status(401).json({ error: 'Nao autenticado. Acesse /auth/login primeiro.' });
     try {
-          const response = await fetch(`https://api.mercadolivre.com.br/users/${token.user_id}/items/search?access_token=${token.access_token}`);
-          if (!response.ok) throw new Error('Erro ao buscar produtos: ' + response.status);
-          const data = await response.json();
-          res.json(data);
+        const response = await fetch(`https://api.mercadolibre.com/users/${token.user_id}/items/search?access_token=${token.access_token}`);
+        if (!response.ok) throw new Error('Erro ao buscar produtos: ' + response.status);
+        const data = await response.json();
+        res.json(data);
     } catch (err) {
-          res.status(500).json({ error: err.message });
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -186,15 +186,15 @@ app.post('/products', async (req, res) => {
     const token = getToken(req);
     if (!token) return res.status(401).json({ error: 'Nao autenticado. Acesse /auth/login primeiro.' });
     try {
-          const response = await fetch(`https://api.mercadolivre.com.br/items?access_token=${token.access_token}`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(req.body)
-          });
-          const data = await response.json();
-          res.status(response.status).json(data);
+        const response = await fetch(`https://api.mercadolibre.com/items?access_token=${token.access_token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        const data = await response.json();
+        res.status(response.status).json(data);
     } catch (err) {
-          res.status(500).json({ error: err.message });
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -202,12 +202,12 @@ app.get('/orders', async (req, res) => {
     const token = getToken(req);
     if (!token) return res.status(401).json({ error: 'Nao autenticado. Acesse /auth/login primeiro.' });
     try {
-          const response = await fetch(`https://api.mercadolivre.com.br/orders/search?seller=${token.user_id}&access_token=${token.access_token}`);
-          if (!response.ok) throw new Error('Erro ao buscar pedidos: ' + response.status);
-          const data = await response.json();
-          res.json(data);
+        const response = await fetch(`https://api.mercadolibre.com/orders/search?seller=${token.user_id}&access_token=${token.access_token}`);
+        if (!response.ok) throw new Error('Erro ao buscar pedidos: ' + response.status);
+        const data = await response.json();
+        res.json(data);
     } catch (err) {
-          res.status(500).json({ error: err.message });
+        res.status(500).json({ error: err.message });
     }
 });
 
