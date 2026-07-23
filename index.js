@@ -9,6 +9,7 @@ const PORT = process.env.PORT || 3000;
 const ML_CLIENT_ID = process.env.ML_CLIENT_ID || '';
 const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET || '';
 const ML_REDIRECT_URI = process.env.ML_REDIRECT_URI || 'http://localhost:3000/callback';
+const SYNC_TOKEN = process.env.SYNC_TOKEN || '';
 
 console.log('Iniciando servidor...');
 console.log('PORT:', PORT);
@@ -23,6 +24,43 @@ function getToken(req) {
     } catch (e) {
         return null;
     }
+}
+
+let serverToken = null;
+
+function saveServerToken(tokenData) {
+    serverToken = Object.assign({}, tokenData, { obtained_at: Date.now() });
+}
+
+async function refreshServerToken() {
+    if (!serverToken || !serverToken.refresh_token) return null;
+    try {
+        const response = await fetch('https://api.mercadolibre.com/oauth/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+            body: new URLSearchParams({
+                grant_type: 'refresh_token',
+                client_id: ML_CLIENT_ID,
+                client_secret: ML_CLIENT_SECRET,
+                refresh_token: serverToken.refresh_token
+            }).toString()
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        saveServerToken(data);
+        return serverToken;
+    } catch (e) {
+        return null;
+    }
+}
+
+async function getValidServerToken() {
+    if (!serverToken) return null;
+    const ageSeconds = (Date.now() - serverToken.obtained_at) / 1000;
+    if (ageSeconds > (serverToken.expires_in - 300)) {
+        return await refreshServerToken();
+    }
+    return serverToken;
 }
 
 app.get('/health', (req, res) => {
@@ -69,6 +107,7 @@ app.get('/', (req, res) => {
       GET /orders - Listar pedidos<br>
       GET /logout - Desconectar<br>
       POST /webhook - Receber notificacoes<br>
+      POST /api/sheet-sync - Sincronizar planilha (protegido por token)<br>
       GET /health - Status da API
       </div>
       </div>
@@ -135,6 +174,7 @@ async function handleCallback(req, res) {
     }
 
     const tokenData = await response.json();
+        saveServerToken(tokenData);
         res.cookie('ml_token', JSON.stringify(tokenData), { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 * 30 });
         res.send(`<!DOCTYPE html>
         <html>
@@ -219,6 +259,115 @@ app.post('/webhook', (req, res) => {
 app.get('/logout', (req, res) => {
     res.clearCookie('ml_token');
     res.redirect('/');
+});
+
+function requireSyncToken(req, res, next) {
+    const provided = req.headers['x-sync-token'];
+    if (!SYNC_TOKEN || provided !== SYNC_TOKEN) {
+        return res.status(401).json({ error: 'Token de sincronizacao invalido ou ausente.' });
+    }
+    next();
+}
+
+async function fetchItemSheetData(code, accessToken) {
+    const itemRes = await fetch(`https://api.mercadolibre.com/items/${code}?access_token=${accessToken}`);
+    if (!itemRes.ok) throw new Error('Anuncio nao encontrado (' + itemRes.status + ')');
+    const item = await itemRes.json();
+
+const skuAttr = (item.attributes || []).find(a => a.id === 'SELLER_SKU');
+    const sku = item.seller_custom_field || (skuAttr && skuAttr.value_name) || '';
+
+let visits30d = 0;
+    try {
+        const visitsRes = await fetch(`https://api.mercadolibre.com/items/${code}/visits/time_window?last=30&unit=day&access_token=${accessToken}`);
+        if (visitsRes.ok) {
+            const visitsData = await visitsRes.json();
+            visits30d = visitsData.total_visits || 0;
+        }
+    } catch (e) {}
+
+let commissionPercent = 0;
+    let commissionValue = 0;
+    try {
+        const priceRes = await fetch(`https://api.mercadolibre.com/sites/MLB/listing_prices?price=${item.price}&listing_type_id=${item.listing_type_id}&category_id=${item.category_id}&access_token=${accessToken}`);
+        if (priceRes.ok) {
+            const priceData = await priceRes.json();
+            const entry = Array.isArray(priceData) ? priceData[0] : priceData;
+            if (entry && entry.sale_fee_amount != null) {
+                commissionValue = entry.sale_fee_amount;
+                commissionPercent = item.price ? (commissionValue / item.price) * 100 : 0;
+            }
+        }
+    } catch (e) {}
+
+let promoPercent = 0;
+    let promoRebate = 0;
+    let priceWithPromo = item.price;
+    try {
+        const promoRes = await fetch(`https://api.mercadolibre.com/seller-promotions/items/${code}?app_version=v2&access_token=${accessToken}`);
+        if (promoRes.ok) {
+            const promoData = await promoRes.json();
+            const promos = Array.isArray(promoData) ? promoData : (promoData.results || []);
+            const active = promos.find(p => p.status === 'started' || p.status === 'active');
+            if (active) {
+                priceWithPromo = active.deal_price != null ? active.deal_price : (active.price != null ? active.price : item.price);
+                promoRebate = item.price - priceWithPromo;
+                promoPercent = item.price ? (promoRebate / item.price) * 100 : 0;
+            }
+        }
+    } catch (e) {}
+
+let shippingCost = 0;
+    try {
+        const shipRes = await fetch(`https://api.mercadolibre.com/items/${code}/shipping_options?access_token=${accessToken}`);
+        if (shipRes.ok) {
+            const shipData = await shipRes.json();
+            const opt = (shipData.options || [])[0];
+            if (opt) shippingCost = opt.list_cost != null ? opt.list_cost : (opt.cost != null ? opt.cost : 0);
+        }
+    } catch (e) {}
+
+const soldTotal = item.sold_quantity || 0;
+
+return {
+    titulo: item.title,
+    sku: sku,
+    estoque: item.available_quantity,
+    status: item.status,
+    exposicao: item.listing_type_id,
+    vendas: soldTotal,
+    visitas: visits30d,
+    conversao: visits30d ? (soldTotal / visits30d) * 100 : 0,
+    preco_base: item.price,
+    preco_com_oferta: priceWithPromo,
+    promo_percent: promoPercent,
+    promo_rebate: promoRebate,
+    comissao_percent: commissionPercent,
+    comissao_valor: commissionValue,
+    mercado_envios: shippingCost,
+    logistic_type: (item.shipping && item.shipping.logistic_type) || ''
+};
+}
+
+app.post('/api/sheet-sync', requireSyncToken, async (req, res) => {
+    const token = await getValidServerToken();
+    if (!token) {
+        return res.status(401).json({ error: 'A API ainda nao esta autenticada no Mercado Livre neste servidor. Acesse a pagina inicial e faca login pelo menos uma vez.' });
+    }
+    const codes = Array.isArray(req.body.codes) ? req.body.codes.filter(Boolean) : [];
+    if (codes.length === 0) {
+        return res.status(400).json({ error: 'Nenhum codigo de anuncio informado.' });
+    }
+
+         const results = {};
+    for (const code of codes) {
+        try {
+            results[code] = await fetchItemSheetData(code, token.access_token);
+        } catch (err) {
+            results[code] = { error: err.message };
+        }
+    }
+    res.json({ results: results });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
